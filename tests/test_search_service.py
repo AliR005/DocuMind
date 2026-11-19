@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
+from app.models import Document
 from app.repositories.document_repository import DocumentRepository
 from app.services.search_service import SearchService
 
@@ -72,6 +73,14 @@ def test_search_returns_no_results_below_threshold(session):
     assert results == []
 
 
+def test_zero_threshold_still_excludes_chunks_with_no_term_overlap(session):
+    add_document(session, "garden.txt", "Flowers, soil, trees and watering.")
+
+    results = SearchService(session, min_relevance_threshold=0.0).search("quasar telescope")
+
+    assert results == []
+
+
 def test_search_handles_blank_or_unusable_query(session):
     add_document(session, "notes.txt", "Ordinary project notes.")
     service = SearchService(session, min_relevance_threshold=0.1)
@@ -102,3 +111,27 @@ def test_search_validates_limit_and_threshold(session):
         SearchService(session, min_relevance_threshold=1.1)
     with pytest.raises(ValueError):
         SearchService(session).search("query", limit=0)
+
+
+def test_repository_persists_document_and_chunks_in_sqlite_file(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'documents.sqlite3'}")
+    Base.metadata.create_all(engine)
+    text = "A persisted document with searchable chunks."
+
+    with Session(engine) as db:
+        created = DocumentRepository(db).create(
+            filename="persisted.txt",
+            content_type="text/plain",
+            content_sha256="a" * 64,
+            size_bytes=len(text.encode("utf-8")),
+            chunks=[text[:20], text[18:]],
+        )
+        document_id = created.id
+
+    with Session(engine) as db:
+        persisted = db.get(Document, document_id)
+        assert persisted is not None
+        assert persisted.filename == "persisted.txt"
+        assert [chunk.content for chunk in persisted.chunks] == [text[:20], text[18:]]
+
+    engine.dispose()

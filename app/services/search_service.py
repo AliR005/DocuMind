@@ -65,7 +65,7 @@ class SearchService:
         results = []
         for index in ranked_indices:
             score = float(similarities[index])
-            if score < self.min_relevance_threshold:
+            if score <= 0.0 or score < self.min_relevance_threshold:
                 break
             chunk = chunks[index]
             results.append(SearchResult(chunk=chunk, document=chunk.document, score=score))
