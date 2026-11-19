@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     max_upload_size_bytes: int = 10 * 1024 * 1024
     chunk_size: int = 1000
     chunk_overlap: int = 200
+    min_relevance_threshold: float = 0.1
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
             raise ValueError("max_upload_size_bytes must be greater than zero")
         if self.chunk_size <= 0:
             raise ValueError("chunk_size must be greater than zero")
+        if not 0.0 <= self.min_relevance_threshold <= 1.0:
+            raise ValueError("min_relevance_threshold must be between 0 and 1")
         if self.chunk_overlap < 0 or self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap must be between zero and chunk_size - 1")
         return self
