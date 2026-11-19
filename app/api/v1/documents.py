@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
@@ -20,7 +21,7 @@ class DocumentOut(BaseModel):
     content_type: str | None
     content_sha256: str
     size_bytes: int
-    created_at: object
+    created_at: datetime
     chunks: list["ChunkOut"]
 
     model_config = ConfigDict(from_attributes=True)
@@ -45,12 +46,12 @@ async def upload_document(
     content = await file.read(settings.max_upload_size_bytes + 1)
     if len(content) > settings.max_upload_size_bytes:
         raise HTTPException(status_code=413, detail="File exceeds the maximum allowed size")
-    if not content or not content.strip():
-        raise HTTPException(status_code=400, detail="File is empty")
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="File must use UTF-8 encoding") from exc
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="File is empty")
 
     content_sha256 = hashlib.sha256(content).hexdigest()
     repository = DocumentRepository(session)

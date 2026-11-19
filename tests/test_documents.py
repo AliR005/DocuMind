@@ -1,12 +1,13 @@
+from datetime import datetime
+
 import pytest
+from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.db.base import Base
-from app.db.session import get_db
-from app.main import app
 
 
 @pytest.fixture()
@@ -37,9 +38,12 @@ def client(monkeypatch):
 
 
 def test_upload_and_list_document_with_overlapping_chunks(client, monkeypatch):
-    monkeypatch.setattr("app.api.v1.documents.get_settings", lambda: type("Settings", (), {
-        "max_upload_size_bytes": 1000, "chunk_size": 6, "chunk_overlap": 2
-    })())
+    monkeypatch.setattr(
+        "app.api.v1.documents.get_settings",
+        lambda: type(
+            "Settings", (), {"max_upload_size_bytes": 1000, "chunk_size": 6, "chunk_overlap": 2}
+        )(),
+    )
     response = client.post(
         "/api/v1/documents/upload",
         files={"file": ("notes.txt", b"abcdefghij", "text/plain")},
@@ -48,21 +52,36 @@ def test_upload_and_list_document_with_overlapping_chunks(client, monkeypatch):
     assert response.status_code == 201
     document = response.json()
     assert document["filename"] == "notes.txt"
-    assert [chunk["content"] for chunk in document["chunks"]] == ["abcdef", "efghij", "ij"]
-    assert [chunk["chunk_index"] for chunk in document["chunks"]] == [0, 1, 2]
+    assert [chunk["content"] for chunk in document["chunks"]] == ["abcdef", "efghij"]
+    assert [chunk["chunk_index"] for chunk in document["chunks"]] == [0, 1]
+    datetime.fromisoformat(document["created_at"])
 
     listing = client.get("/api/v1/documents")
     assert listing.status_code == 200
     assert [item["id"] for item in listing.json()] == [document["id"]]
 
+    openapi = client.get("/openapi.json").json()
+    created_at_schema = openapi["components"]["schemas"]["DocumentOut"]["properties"]["created_at"]
+    assert created_at_schema == {"type": "string", "format": "date-time", "title": "Created At"}
+
 
 def test_rejects_non_txt_file(client):
     response = client.post("/api/v1/documents/upload", files={"file": ("notes.pdf", b"text")})
-    assert response.status_code == 400
+    assert response.status_code == 415
 
 
 def test_rejects_empty_file(client):
     response = client.post("/api/v1/documents/upload", files={"file": ("empty.txt", b"")})
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("text", [" \t\r\n", "\u00a0\u2003"])
+def test_rejects_files_containing_only_whitespace(client, text):
+    response = client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("whitespace.txt", text.encode("utf-8"), "text/plain")},
+    )
+
     assert response.status_code == 400
 
 
@@ -72,9 +91,12 @@ def test_rejects_invalid_utf8(client):
 
 
 def test_rejects_file_over_size_limit(client, monkeypatch):
-    monkeypatch.setattr("app.api.v1.documents.get_settings", lambda: type("Settings", (), {
-        "max_upload_size_bytes": 3, "chunk_size": 6, "chunk_overlap": 2
-    })())
+    monkeypatch.setattr(
+        "app.api.v1.documents.get_settings",
+        lambda: type(
+            "Settings", (), {"max_upload_size_bytes": 3, "chunk_size": 6, "chunk_overlap": 2}
+        )(),
+    )
     response = client.post("/api/v1/documents/upload", files={"file": ("large.txt", b"four")})
     assert response.status_code == 413
 

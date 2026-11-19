@@ -8,4 +8,14 @@ def split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
         return []
 
     step = chunk_size - chunk_overlap
-    return [text[start : start + chunk_size] for start in range(0, len(text), step)]
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append(text[start:end])
+        if end == len(text):
+            break
+        start += step
+
+    return chunks
